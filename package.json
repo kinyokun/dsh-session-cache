@@ -1,0 +1,40 @@
+{
+  "name": "dsh-session-cache",
+  "version": "0.1.0",
+  "description": "DSH 客户端插件：把最近看过的会话留在内存里，切换会话时直接复用已加载的历史与跟随流，避免每次重新拉取整页历史；带 LRU 上限与空闲释放。",
+  "type": "module",
+  "main": "host.js",
+  "exports": {
+    ".": "./host.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "host.js",
+    "client.js"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cache",
+    "session",
+    "performance"
+  ],
+  "author": "kinyokun",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-session-controller"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}
