@@ -15,7 +15,8 @@ window.__ModuleLoader__.load({
 		 * 切回来直接复用已加载的历史与仍然连着的跟随流，只增量接收新事件。
 		 * 超出 N 个按 LRU 释放；空闲超过 idleMs 也释放，避免长期占用内存与连接。
 		 */
-		var DEFAULTS = { max: 3, idleMs: 600000 };
+		var DEFAULTS = { max: 5, idleMs: 86400000 };
+		var STORAGE_KEY = "dsh.session-cache";
 		var PinCache = class {
 			constructor(options) {
 				this.retain = options.retain;
@@ -96,6 +97,26 @@ window.__ModuleLoader__.load({
 				if (entry.timer !== undefined) this.clearTimer(entry.timer);
 				entry.release();
 			}
+			/**
+			 * 运行期调整上限与空闲时间：缩小时立即淘汰超额项，并按新的空闲时间重排计时。
+			 * @param options - { max?, idleMs? }
+			 * @returns 生效后的 { max, idleMs }
+			 */
+			configure(options) {
+				var next = options || {};
+				if (typeof next.max === "number" && isFinite(next.max)) this.max = Math.max(1, Math.floor(next.max));
+				if (typeof next.idleMs === "number" && isFinite(next.idleMs)) this.idleMs = Math.max(1000, Math.floor(next.idleMs));
+				while (this.entries.size > this.max) {
+					var victim = this.oldest();
+					if (victim === undefined) break;
+					this.drop(victim);
+				}
+				for (var [id, entry] of this.entries) {
+					if (entry.timer !== undefined) this.clearTimer(entry.timer);
+					this.arm(id, entry);
+				}
+				return { max: this.max, idleMs: this.idleMs };
+			}
 			/** 已保活的会话 id（最近使用的在后）。 */
 			ids() {
 				return [...this.entries.keys()];
@@ -110,6 +131,31 @@ window.__ModuleLoader__.load({
 		};
 		//#endregion
 		//#region lib/types/client/index.js
+		/** 只取第一个非 undefined 的值。 */
+		function pick(first, second) {
+			return first === undefined ? second : first;
+		}
+		/** 读取持久化配置（localStorage 不可用时返回空对象）。 */
+		function readStoredConfig() {
+			try {
+				if (typeof window === "undefined" || !window.localStorage) return {};
+				var raw = window.localStorage.getItem(STORAGE_KEY);
+				if (!raw) return {};
+				var parsed = JSON.parse(raw);
+				return parsed && typeof parsed === "object" ? parsed : {};
+			} catch (error) {
+				return {};
+			}
+		}
+		/** 写入持久化配置。 */
+		function writeStoredConfig(value) {
+			try {
+				if (typeof window === "undefined" || !window.localStorage) return;
+				window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+			} catch (error) {
+				console.warn("[dsh-session-cache]", error);
+			}
+		}
 		/** 强依赖：会话控制器提供的 sessions 服务。 */
 		var inject = ["sessions"];
 		/**
@@ -120,11 +166,12 @@ window.__ModuleLoader__.load({
 			var sessions = ctx.sessions;
 			if (sessions === undefined || sessions === null) return;
 			var options = (typeof window !== "undefined" && window.__DSH_SESSION_CACHE__) || {};
+			var stored = readStoredConfig();
 			// 保活引用必须走原始 retain：走包装后的方法会再次触发 handleRetain，形成递归。
 			var originalRetain = sessions.retain.bind(sessions);
 			var cache = new PinCache({
-				max: options.max,
-				idleMs: options.idleMs,
+				max: pick(options.max, stored.max),
+				idleMs: pick(options.idleMs, stored.idleMs),
 				retain: (id, retainOptions) => originalRetain(id, retainOptions),
 				onError: (error) => console.warn("[dsh-session-cache]", error),
 			});
@@ -141,6 +188,15 @@ window.__ModuleLoader__.load({
 			if (typeof window !== "undefined") {
 				window.__DSH_SESSION_CACHE_STATS__ = () => cache.stats();
 				window.__DSH_SESSION_CACHE_CLEAR__ = () => cache.dispose();
+				/**
+				 * 运行期改配置：__DSH_SESSION_CACHE_CONFIGURE__({ max: 8, idleMs: 3600000 })
+				 * 默认写入 localStorage（persist: false 只改当前页面）。
+				 */
+				window.__DSH_SESSION_CACHE_CONFIGURE__ = (next) => {
+					var applied = cache.configure(next || {});
+					if (!next || next.persist !== false) writeStoredConfig(applied);
+					return cache.stats();
+				};
 			}
 			var cleanup = () => {
 				sessions.retain = originalRetain;

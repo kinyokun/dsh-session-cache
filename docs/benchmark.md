@@ -11,7 +11,7 @@
 
    ```js
    typeof window.__DSH_SESSION_CACHE_STATS__   // "function"
-   __DSH_SESSION_CACHE_STATS__()               // { kept: 1, max: 3, idleMs: 600000, ids: ["session-bfd..."] }
+   __DSH_SESSION_CACHE_STATS__()               // { kept: 1, max: 5, idleMs: 86400000, ids: ["session-bfd..."] }
    ```
 
    打开第二个会话后再查：`__DSH_SESSION_CACHE_STATS__().ids.length === 2`，
@@ -43,5 +43,5 @@
 ## 资源占用
 
 - 每个保活会话：已加载的历史页（内存中的行投影）+ 一条跟随流；
-- 上限：3 个会话、空闲 10 分钟自动释放；
+- 上限：5 个会话、空闲 24 小时自动释放（可用 `__DSH_SESSION_CACHE_CONFIGURE__` 调整）；
 - 关闭标签页 / 刷新页面时跟随流自动断开，插件随页面销毁。

@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-cache",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DSH 客户端插件：把最近看过的会话留在内存里，切换会话时直接复用已加载的历史与跟随流，避免每次重新拉取整页历史；带 LRU 上限与空闲释放。",
   "type": "module",
   "main": "host.js",

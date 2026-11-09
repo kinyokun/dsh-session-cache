@@ -7,8 +7,15 @@ import vm from "node:vm";
 function loadBundle() {
   const code = readFileSync(new URL("../client.js", import.meta.url), "utf8");
   let definition;
+  const store = new Map();
+  const localStorage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: (key) => store.delete(key),
+  };
   const sandbox = {
-    window: { __ModuleLoader__: { load(value) { definition = value; } } },
+    window: { __ModuleLoader__: { load(value) { definition = value; } }, localStorage },
+    localStorage,
     console,
     setTimeout,
     clearTimeout,
@@ -18,7 +25,7 @@ function loadBundle() {
   const exports = definition.factory(() => {
     throw new Error("the bundle must not require other packages");
   });
-  return { exports, sandbox };
+  return { exports, sandbox, store };
 }
 
 /** 可控时钟：setTimer 只在 advance 时触发。 */
@@ -147,6 +154,59 @@ test("retain 抛错不会破坏缓存", () => {
   cache.handleRetain("ghost");
   assert.deepEqual([...cache.ids()], []);
   assert.equal(errors.length, 1);
+});
+
+test("默认值：5 个会话 / 24 小时空闲", () => {
+  const { exports } = loadBundle();
+  assert.equal(exports.__core.DEFAULTS.max, 5);
+  assert.equal(exports.__core.DEFAULTS.idleMs, 24 * 60 * 60 * 1000);
+});
+
+test("configure 缩小上限时立即淘汰超额会话", () => {
+  const { cache, clock, sessions } = makeCache({ max: 5 });
+  for (const id of ["a", "b", "c", "d"]) {
+    cache.handleRetain(id);
+    clock.advance(10);
+  }
+  const applied = cache.configure({ max: 2 });
+  assert.equal(applied.max, 2);
+  assert.deepEqual([...cache.ids()], ["c", "d"]);
+  assert.equal(sessions.refs.filter((r) => r.released).length, 2);
+});
+
+test("configure 修改空闲时间会重排现有计时", () => {
+  const { cache, clock, sessions } = makeCache({ idleMs: 60000 });
+  cache.handleRetain("a");
+  cache.configure({ idleMs: 1000 });
+  clock.advance(999);
+  assert.equal(sessions.refs[0].released, false);
+  clock.advance(1);
+  assert.equal(sessions.refs[0].released, true);
+});
+
+test("控制台命令改配置并持久化到 localStorage", () => {
+  const { exports, sandbox, store } = loadBundle();
+  let cleanup;
+  const sessions = makeSessions();
+  const ctx = { sessions, effect: (callback) => { cleanup = callback(); } };
+  const cache = exports.apply(ctx);
+  const stats = sandbox.window.__DSH_SESSION_CACHE_CONFIGURE__({ max: 8, idleMs: 7200000 });
+  assert.equal(stats.max, 8);
+  assert.equal(stats.idleMs, 7200000);
+  assert.deepEqual(JSON.parse(store.get("dsh.session-cache")), { max: 8, idleMs: 7200000 });
+  cleanup();
+  assert.equal(cache.stats().kept, 0);
+});
+
+test("持久化配置在下次 apply 时生效", () => {
+  const first = loadBundle();
+  const store = first.store;
+  store.set("dsh.session-cache", JSON.stringify({ max: 2, idleMs: 5000 }));
+  const sessions = makeSessions();
+  const ctx = { sessions, effect: () => {} };
+  const cache = first.exports.apply(ctx);
+  assert.equal(cache.stats().max, 2);
+  assert.equal(cache.stats().idleMs, 5000);
 });
 
 test("apply 包装 sessions.retain 并在清理时还原", () => {

@@ -26,8 +26,9 @@ DSH 的客户端会话是**引用计数**的（`sessions.retain / release`）。
 
 ## 行为
 
-- **LRU 上限**：默认保留最近 **3** 个会话，超出按最近使用时间释放；
-- **空闲释放**：默认 **10 分钟**没再打开就释放，避免长期占用内存与 WebSocket 流；
+- **LRU 上限**：默认保留最近 **5** 个会话，超出按最近使用时间释放；
+- **空闲释放**：默认 **24 小时**没再打开就释放，避免长期占用内存与 WebSocket 流；
+- **可运行期调整**：控制台命令 `__DSH_SESSION_CACHE_CONFIGURE__({ max, idleMs })`，默认写入 localStorage，刷新后仍生效；
 - **不干扰视图自己的引用**：只释放自己持有的那一份，视图的生命周期仍由 UI 决定；
 - **失败安全**：`sessions` 服务缺失、`retain` 抛错、DOM 环境异常都只记一条 warning，不影响页面；
 - **零网络请求**：插件只在浏览器内存里工作，不发请求、不写磁盘。
@@ -58,22 +59,36 @@ cp package.json host.js client.js "$PROFILE_DIR/node_modules/dsh-session-cache/"
 安装后用浏览器控制台确认：
 
 ```js
-__DSH_SESSION_CACHE_STATS__()   // { kept: 1, max: 3, idleMs: 600000, ids: ["session-..."] }
+__DSH_SESSION_CACHE_STATS__()   // { kept: 1, max: 5, idleMs: 86400000, ids: ["session-..."] }
 ```
 
 ## 配置
 
-在页面里（刷新前）设置 `window.__DSH_SESSION_CACHE__`，或用浏览器控制台改默认值后重载：
+默认 **5 个会话 / 24 小时**。运行期用控制台命令改，改完立即生效并写入 localStorage：
+
+```js
+// 同时改两个
+__DSH_SESSION_CACHE_CONFIGURE__({ max: 8, idleMs: 3600000 })
+
+// 只缩短空闲时间，不持久化（只影响当前页面）
+__DSH_SESSION_CACHE_CONFIGURE__({ idleMs: 600000, persist: false })
+
+// 回到默认
+__DSH_SESSION_CACHE_CONFIGURE__({ max: 5, idleMs: 86400000 })
+```
 
 | 字段 | 默认 | 说明 |
 | --- | --- | --- |
-| `max` | 3 | 最多同时保活几个会话 |
-| `idleMs` | 600000 | 空闲多久释放（毫秒） |
+| `max` | 5 | 最多同时保活几个会话（最小 1） |
+| `idleMs` | 86400000 | 空闲多久释放（毫秒，最小 1000） |
+| `persist` | true | 是否写入 localStorage（`dsh.session-cache`） |
 
-调试用全局：
+配置优先级：`window.__DSH_SESSION_CACHE__`（页面内临时覆盖） > localStorage > 默认值。
+
+其它调试全局：
 
 - `__DSH_SESSION_CACHE_STATS__()`：当前保活的会话；
-- `__DSH_SESSION_CACHE_CLEAR__()`：立即释放全部。
+- `__DSH_SESSION_CACHE_CLEAR__()`：立即释放全部（不影响已保存的配置）。
 
 ## 为什么不做成 Service Worker / HTTP 缓存
 
