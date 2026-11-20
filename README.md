@@ -100,10 +100,15 @@ Service Worker 拦不到。真正的成本是「会话作用域被回收后重�
 
 | 项目 | 说明 |
 | --- | --- |
-| 验证版本 | `@deepseek-ai/dsh 0.2.2-rc.1`（客户端模块系统 `dsh-client-modules`） |
+| 验证版本 | `@deepseek-ai/dsh 0.2.2-rc.5`（客户端模块系统 `dsh-client-modules`，2026-11-20 真实 `dsh web` 验证） |
 | 使用的客户端 API | `sessions.retain(target, { source })` + 引用上的 `release()`；`sessions` 服务 |
 | 失效表现 | 客户端 API 变化时插件要么不生效（`sessions` 不存在直接返回），要么在控制台留下 warning，不会阻塞页面 |
 | 打包格式 | 手写 `window.__ModuleLoader__.load` 客户端 bundle，无构建步骤 |
+
+真实验证（rc.5，隔离的 `DSH_HOME` + 临时 profile，3081 端口）：连续打开 7 个会话，
+`__DSH_SESSION_CACHE_STATS__()` 的 `kept` 从 1 涨到 5 后按 LRU 轮换；`CONFIGURE({ max: 2 })`
+立即淘汰到 2 个；`CONFIGURE({ idleMs: 1000 })` 后 2.5 秒全部释放；配置写入
+`localStorage["dsh.session-cache"]`，刷新后仍生效。
 
 ## 测试
 
@@ -111,8 +116,8 @@ Service Worker 拦不到。真正的成本是「会话作用域被回收后重�
 npm test
 ```
 
-7 项单元测试：首次保活、LRU 淘汰、空闲释放、重复打开刷新计时、dispose 全释放、
-`retain` 抛错兜底、`apply` 包装与还原。
+12 项单元测试：首次保活、LRU 淘汰、空闲释放、重复打开刷新计时、dispose 全释放、
+`retain` 抛错兜底、`apply` 包装与还原、`configure` 重排计时与持久化。
 
 ## 基准测试
 
